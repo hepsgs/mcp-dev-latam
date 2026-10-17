@@ -67,6 +67,7 @@ import {
 import { createOpenpayClient } from "./client.js";
 import { loadOpenpayConfig, type OpenpayConfig } from "./config.js";
 import {
+  assertNoRawCardData,
   assertToolAllowed,
   isAuthorizedHttpRequest,
   pathSegment,
@@ -462,6 +463,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const a = (args ?? {}) as Record<string, unknown>;
 
   try {
+    assertNoRawCardData(a);
     assertToolAllowed(name, config);
     switch (name) {
       case "create_charge": {

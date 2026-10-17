@@ -25,6 +25,14 @@ describe("loadOpenpayConfig", () => {
     expect(() =>
       loadOpenpayConfig({ ...credentials, OPENPAY_ENV: "production" }),
     ).toThrow(/OPENPAY_ENABLE_PRODUCTION/);
+
+    expect(() =>
+      loadOpenpayConfig({
+        ...credentials,
+        OPENPAY_BASE_URL: "https://api.openpay.mx",
+        OPENPAY_ALLOW_CUSTOM_BASE_URL: "true",
+      }),
+    ).toThrow(/production provider host/i);
   });
 
   it("rejects custom provider hosts unless explicitly allowed", () => {
@@ -53,4 +61,3 @@ describe("loadOpenpayConfig", () => {
     ).toThrow(/MCP_HTTP_ALLOW_REMOTE/);
   });
 });
-

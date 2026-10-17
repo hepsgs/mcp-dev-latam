@@ -81,6 +81,14 @@ function providerOrigin(
     throw new Error("OPENPAY_BASE_URL must contain only an HTTPS origin");
   }
   if (
+    environment !== "production" &&
+    url.origin === "https://api.openpay.mx"
+  ) {
+    throw new Error(
+      "The production provider host requires OPENPAY_ENV=production and OPENPAY_ENABLE_PRODUCTION=true",
+    );
+  }
+  if (
     url.origin !== official &&
     !enabled(env.OPENPAY_ALLOW_CUSTOM_BASE_URL)
   ) {
@@ -172,4 +180,3 @@ export function loadOpenpayConfig(
     },
   };
 }
-

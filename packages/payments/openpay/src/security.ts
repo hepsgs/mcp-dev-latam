@@ -54,14 +54,18 @@ function containsRawCardData(value: unknown): boolean {
   );
 }
 
+export function assertNoRawCardData(value: unknown): void {
+  if (containsRawCardData(value)) {
+    throw new Error(
+      "Raw card data is prohibited; tokenize with Openpay.js and pass a token",
+    );
+  }
+}
+
 export function validateCardInput(
   input: Record<string, unknown>,
 ): Record<string, unknown> {
-  if (containsRawCardData(input)) {
-    throw new Error(
-      "Raw card data is prohibited; tokenize with Openpay.js and pass token_id",
-    );
-  }
+  assertNoRawCardData(input);
   requiredString(input.token_id, "token_id");
   return input;
 }
@@ -101,11 +105,7 @@ export function validateChargeInput(
   input: Record<string, unknown>,
   production = false,
 ): ValidatedCharge {
-  if (containsRawCardData(input)) {
-    throw new Error(
-      "Raw card data is prohibited; tokenize with Openpay.js and pass source_id",
-    );
-  }
+  assertNoRawCardData(input);
 
   const method = requiredString(input.method, "method", 32);
   if (!["card", "bank_account", "store"].includes(method)) {

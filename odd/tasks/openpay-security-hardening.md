@@ -39,8 +39,8 @@ Acceptance:
 
 - [x] T1 · S2 · inline (mapping trigger resolved by `map_openpay_fork`) · RED→GREEN 8/8; commits: `3deb0a1`, `d2adacf`
 - [x] T2 · S2 · inline · Provider client and public MCP contract GREEN 13/13; commits: `d040bf1`, `85776ca`
-- [x] T3 · S2-S3 · inline · Secure HTTP, dependency alignment, 0.3.0 metadata, migration docs, and existing CI coverage verified · commit: pending
-- [ ] T4 · S1-S3 · inline · Run focused/full verification, independent high-risk verification, and prepare the public PR · commit: pending
+- [x] T3 · S2-S3 · inline · Secure HTTP, dependency alignment, 0.3.0 metadata, migration docs, and existing CI coverage verified · commit: `837d6ba`
+- [~] T4 · S1-S3 · inline · Independent verification found four blockers; one bounded correction applied and recheck pending · commit: pending
 
 ## Log
 
@@ -63,3 +63,4 @@ Acceptance:
 
 - L9 · 2026-10-17 · Public MCP contract GREEN 13/13; HTTP smoke returned 401 without Bearer auth and 200 with auth plus Cache-Control: no-store. Declared Express 5.3.0 and upgraded the direct MCP SDK to 1.32.1 after audit identified the older resolved version as vulnerable.
 - L10 · 2026-10-17 · HTTP rate-limit smoke returned 200 then 429 at a one-request limit. Package 0.3.0 tests 13/13 and build pass; catalog audit reports no Openpay findings and zero HIGH findings repository-wide.
+- L11 · 2026-10-17 · Independent verification found four blockers: missing sibling modules in the npm artifact, direct production-host opt-in bypass, raw card fields escaping through other tools, and no public-interface read-only regression. One correction batch added package files/prepack controls, blocked sandbox-to-production host selection, enforced raw-card rejection for every tool, and added public regression tests. Focused tests pass 14/14; packed installation imports successfully.

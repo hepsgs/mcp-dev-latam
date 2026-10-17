@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMcpServer } from "../index.js";
 import type { OpenpayConfig } from "../config.js";
 
@@ -42,6 +42,7 @@ afterEach(async () => {
   await Promise.all(connections.splice(0).map(({ client, server }) =>
     Promise.all([client.close(), server.close()]),
   ));
+  vi.unstubAllGlobals();
 });
 
 describe("Openpay MCP public contract", () => {
@@ -69,8 +70,10 @@ describe("Openpay MCP public contract", () => {
   });
 
   it("rejects raw card data before making a provider request", async () => {
+    const providerFetch = vi.fn();
+    vi.stubGlobal("fetch", providerFetch);
     const client = await connect(config({ allowMutations: true }));
-    const result = await client.callTool({
+    const cardResult = await client.callTool({
       name: "create_card",
       arguments: {
         token_id: "tok_test_123",
@@ -79,11 +82,50 @@ describe("Openpay MCP public contract", () => {
       },
     });
 
-    expect(result.isError).toBe(true);
-    expect(result.content).toEqual(
+    expect(cardResult.isError).toBe(true);
+    expect(cardResult.content).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ text: expect.stringMatching(/raw card/i) }),
       ]),
+    );
+
+    const customerResult = await client.callTool({
+      name: "create_customer",
+      arguments: {
+        name: "Test",
+        email: "test@example.com",
+        card_number: "4111111111111111",
+        cvv: "123",
+      },
+    });
+    expect(customerResult.isError).toBe(true);
+    expect(providerFetch).not.toHaveBeenCalled();
+  });
+
+  it("preserves read-only provider behavior through the public interface", async () => {
+    const providerFetch = vi.fn(async () =>
+      new Response(JSON.stringify({ id: "customer_123", name: "Test" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", providerFetch);
+    const client = await connect(config());
+
+    const result = await client.callTool({
+      name: "get_customer",
+      arguments: { id: "customer_123" },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: expect.stringMatching(/customer_123/) }),
+      ]),
+    );
+    expect(providerFetch).toHaveBeenCalledWith(
+      "https://sandbox-api.openpay.mx/v1/merchant_test/customers/customer_123",
+      expect.objectContaining({ method: "GET" }),
     );
   });
 });
