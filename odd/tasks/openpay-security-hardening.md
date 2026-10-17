@@ -37,8 +37,8 @@ Acceptance:
 
 ## Tasks
 
-- [~] T1 · S2 · inline (mapping trigger resolved by `map_openpay_fork`) · Security module and tests GREEN; work-unit commit pending chain decision
-- [ ] T2 · S2 · inline · Implement provider client and tool safety gates · commit: pending
+- [x] T1 · S2 · inline (mapping trigger resolved by `map_openpay_fork`) · RED→GREEN 8/8; commits: `3deb0a1`, `d2adacf`
+- [~] T2 · S2 · inline · Provider client RED→GREEN 2/2; tool wiring pending
 - [ ] T3 · S2-S3 · inline · Harden HTTP transport and align dependencies/metadata/docs · commit: pending
 - [ ] T4 · S1-S3 · inline · Run focused/full verification, independent high-risk verification, and prepare the public PR · commit: pending
 
@@ -54,4 +54,10 @@ Acceptance:
 
 
 
+
+
+- L7 · 2026-10-17 · Rewrote the unpublished 501-line commit with user approval into two reviewable work units: 288 and 253 lines; no files were lost.
+
+
+- L8 · 2026-10-17 · Provider client RED on missing module, then GREEN 2/2 with timeout, X-Forwarded-For, safe errors, and response redaction.
 
