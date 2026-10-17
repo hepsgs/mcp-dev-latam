@@ -4,6 +4,7 @@ import {
   assertToolAllowed,
   isAuthorizedHttpRequest,
   redactSensitive,
+  validateCardInput,
   validateChargeInput,
 } from "../security.js";
 
@@ -64,6 +65,14 @@ describe("charge safety", () => {
   });
 });
 
+describe("card token safety", () => {
+  it("accepts only client-side tokens and rejects raw PAN or CVV", () => {
+    expect(() => validateCardInput({ token_id: "tok_test_123" })).not.toThrow();
+    expect(() =>
+      validateCardInput({ card_number: "4111111111111111", cvv2: "123" }),
+    ).toThrow(/raw card/i);
+  });
+});
 describe("HTTP authentication and redaction", () => {
   it("validates bearer tokens and redacts sensitive keys", () => {
     expect(
@@ -88,4 +97,3 @@ describe("HTTP authentication and redaction", () => {
     });
   });
 });
-
