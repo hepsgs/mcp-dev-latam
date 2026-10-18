@@ -44,14 +44,24 @@ export function assertToolAllowed(name: string, config: OpenpayConfig): void {
   }
 }
 
+const RAW_CARD_KEYS = new Set([
+  "card",
+  "cardnumber",
+  "pan",
+  "cvv",
+  "cvv2",
+  "cvc",
+  "cvc2",
+  "securitycode",
+]);
+
 function containsRawCardData(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
   if (Array.isArray(value)) return value.some(containsRawCardData);
-  return Object.entries(value).some(
-    ([key, nested]) =>
-      ["card", "card_number", "cvv", "cvv2"].includes(key.toLowerCase()) ||
-      containsRawCardData(nested),
-  );
+  return Object.entries(value).some(([key, nested]) => {
+    const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+    return RAW_CARD_KEYS.has(normalizedKey) || containsRawCardData(nested);
+  });
 }
 
 function requiredString(

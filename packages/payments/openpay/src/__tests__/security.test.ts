@@ -32,6 +32,25 @@ describe("tool authorization", () => {
 });
 
 describe("charge safety", () => {
+  it("rejects common raw PAN and verification-code aliases at any depth", () => {
+    for (const rawCardData of [
+      { pan: "4111111111111111" },
+      { payment: { cardNumber: "4111111111111111" } },
+      { payment: { verification: { cvc: "123" } } },
+    ]) {
+      expect(() =>
+        validateChargeInput({
+          method: "card",
+          amount: 100,
+          order_id: "order-1",
+          customer_ip: "203.0.113.10",
+          source_id: "token-safe",
+          ...rawCardData,
+        }),
+      ).toThrow(/raw card/i);
+    }
+  });
+
   it("rejects raw card data and requires token, order, and customer IP", () => {
     expect(() =>
       validateChargeInput({
