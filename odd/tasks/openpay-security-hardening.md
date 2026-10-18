@@ -40,7 +40,7 @@ Acceptance:
 - [x] T1 · S2 · inline (mapping trigger resolved by `map_openpay_fork`) · RED→GREEN 8/8; commits: `3deb0a1`, `d2adacf`
 - [x] T2 · S2 · inline · Provider client and public MCP contract GREEN 13/13; commits: `d040bf1`, `85776ca`
 - [x] T3 · S2-S3 · inline · Secure HTTP, dependency alignment, 0.3.0 metadata, migration docs, and existing CI coverage verified · commit: `837d6ba`
-- [~] T4 · S1-S3 · inline · Independent verification found four blockers; one bounded correction applied and recheck pending · commit: pending
+- [x] T4 · S1-S3 · inline · Independent verification PASS; native four-lens review correction validated and acknowledged · commits: `285d2b4`, `cce7759`
 
 ## Log
 
@@ -51,16 +51,11 @@ Acceptance:
 - L5 · 2026-10-17 · RED: focused Vitest failed because `security.ts` did not exist; GREEN: 8/8 focused security tests pass after implementing configuration, capability gates, charge validation, HTTP token checks, and redaction.
 - L6 · 2026-10-17 · User approved `stacked-to-main`; each work unit will remain independently testable and reversible.
 
-
-
-
-
-
 - L7 · 2026-10-17 · Rewrote the unpublished 501-line commit with user approval into two reviewable work units: 288 and 253 lines; no files were lost.
-
 
 - L8 · 2026-10-17 · Provider client RED on missing module, then GREEN 2/2 with timeout, X-Forwarded-For, safe errors, and response redaction.
 
 - L9 · 2026-10-17 · Public MCP contract GREEN 13/13; HTTP smoke returned 401 without Bearer auth and 200 with auth plus Cache-Control: no-store. Declared Express 5.3.0 and upgraded the direct MCP SDK to 1.32.1 after audit identified the older resolved version as vulnerable.
 - L10 · 2026-10-17 · HTTP rate-limit smoke returned 200 then 429 at a one-request limit. Package 0.3.0 tests 13/13 and build pass; catalog audit reports no Openpay findings and zero HIGH findings repository-wide.
 - L11 · 2026-10-17 · Independent verification found four blockers: missing sibling modules in the npm artifact, direct production-host opt-in bypass, raw card fields escaping through other tools, and no public-interface read-only regression. One correction batch added package files/prepack controls, blocked sandbox-to-production host selection, enforced raw-card rejection for every tool, and added public regression tests. Focused tests pass 14/14; packed installation imports successfully.
+- L12 · 2026-10-18 · Independent recheck passed after commit `285d2b4`. Native review then identified duplicate decimal-amount blockers for valid 0.29 and 1.10 charges; commit `cce7759` replaced exact floating-point cent comparison with an EPSILON-based tolerance. Focused tests pass 14/14, the full Openpay suite passes 14/14, build passes, targeted validation approved the corrected candidate, and lineage `review-a95bb70310483647` was acknowledged and burned.
