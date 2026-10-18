@@ -53,4 +53,3 @@ describe("loadOpenpayConfig", () => {
     ).toThrow(/MCP_HTTP_ALLOW_REMOTE/);
   });
 });
-
