@@ -68,12 +68,15 @@ function requiredString(
 }
 
 function assertAmount(value: unknown): asserts value is number {
+  const scaled = typeof value === "number" ? value * 100 : Number.NaN;
+  const roundingError = Math.abs(scaled - Math.round(scaled));
+  const tolerance = Number.EPSILON * Math.max(1, Math.abs(scaled)) * 2;
   if (
     typeof value !== "number" ||
     !Number.isFinite(value) ||
     value <= 0 ||
     value > 999_999_999 ||
-    Math.round(value * 100) !== value * 100
+    roundingError > tolerance
   ) {
     throw new Error(
       "amount must be positive and have at most two decimal places",

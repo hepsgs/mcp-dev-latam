@@ -61,6 +61,18 @@ describe("charge safety", () => {
         customer_ip: "203.0.113.10",
       }),
     ).not.toThrow();
+
+    for (const amount of [0.29, 1.1]) {
+      expect(() =>
+        validateChargeInput({
+          method: "card",
+          source_id: "tok_test_123",
+          amount,
+          order_id: `order-${amount}`,
+          customer_ip: "203.0.113.10",
+        }),
+      ).not.toThrow();
+    }
   });
 });
 
