@@ -62,4 +62,15 @@ describe("Openpay client", () => {
       /user@example\.com|4111111111111111/,
     );
   });
+
+  it("normalizes malformed successful JSON without exposing its body", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response('{"card_number":"4111111111111111"', { status: 200 }),
+    );
+    const client = createOpenpayClient(config, fetchMock as typeof fetch);
+
+    await expect(client.request("GET", "/charges/tr_123")).resolves.toEqual({
+      message: "Openpay returned a non-JSON response",
+    });
+  });
 });

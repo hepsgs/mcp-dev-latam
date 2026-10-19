@@ -22,14 +22,23 @@ const MUTATING_TOOLS = new Set([
 ]);
 
 const SENSITIVE_KEYS = new Set([
-  "card_number",
+  "apikey",
+  "cardnumber",
+  "cvc",
+  "cvc2",
   "cvv",
   "cvv2",
   "password",
-  "private_key",
+  "pan",
+  "privatekey",
+  "securitycode",
   "authorization",
   "clabe",
 ]);
+
+function normalizedKey(key: string): string {
+  return key.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
 
 export function assertToolAllowed(name: string, config: OpenpayConfig): void {
   if (MUTATING_TOOLS.has(name) && !config.allowMutations) {
@@ -59,8 +68,7 @@ function containsRawCardData(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
   if (Array.isArray(value)) return value.some(containsRawCardData);
   return Object.entries(value).some(([key, nested]) => {
-    const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, "");
-    return RAW_CARD_KEYS.has(normalizedKey) || containsRawCardData(nested);
+    return RAW_CARD_KEYS.has(normalizedKey(key)) || containsRawCardData(nested);
   });
 }
 
@@ -152,7 +160,7 @@ export function validateChargeInput(
 
 export function pathSegment(value: unknown, name: string): string {
   const text = requiredString(value, name, 128);
-  if (!/^[A-Za-z0-9._-]+$/.test(text)) {
+  if (text === "." || text === ".." || !/^[A-Za-z0-9._-]+$/.test(text)) {
     throw new Error(`${name} contains unsupported characters`);
   }
   return encodeURIComponent(text);
@@ -178,7 +186,7 @@ export function redactSensitive(value: unknown): unknown {
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>).map(([key, nested]) => [
       key,
-      SENSITIVE_KEYS.has(key.toLowerCase())
+      SENSITIVE_KEYS.has(normalizedKey(key))
         ? "[REDACTED]"
         : redactSensitive(nested),
     ]),
