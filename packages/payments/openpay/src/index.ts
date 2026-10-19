@@ -55,53 +55,34 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import type { Express, NextFunction, Request, RequestHandler, Response } from "express";
+import { realpathSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-
-const MERCHANT_ID = process.env.OPENPAY_MERCHANT_ID || "";
-const PRIVATE_KEY = process.env.OPENPAY_PRIVATE_KEY || "";
-const ENV = (process.env.OPENPAY_ENV || "sandbox").toLowerCase();
-
-const HOST =
-  process.env.OPENPAY_BASE_URL ||
-  (ENV === "production"
-    ? "https://api.openpay.mx"
-    : "https://sandbox-api.openpay.mx");
-const BASE_URL = `${HOST}/v1/${MERCHANT_ID}`;
-
-async function openpayRequest(method: string, path: string, body?: unknown): Promise<unknown> {
-  const basic = Buffer.from(`${PRIVATE_KEY}:`).toString("base64");
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Basic ${basic}`,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    throw new Error(`Openpay API ${res.status}: ${await res.text()}`);
-  }
-  const text = await res.text();
-  if (!text) return {};
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { raw: text };
-  }
-}
+import { createOpenpayClient } from "./client.js";
+import { loadOpenpayConfig, type OpenpayConfig } from "./config.js";
+import {
+  assertToolAllowed,
+  isAuthorizedHttpRequest,
+  pathSegment,
+  validateCardInput,
+  validateChargeInput,
+} from "./security.js";
 
 // Managed-tier pointer surfaced to the agent via MCP `instructions`.
 // Informational only — nothing CodeSpar-hosted is called (MIT-safe).
 const MANAGED_TIER_HINT =
   "This open-source CodeSpar server calls the provider's API directly. CodeSpar's managed tier routes one interface across every LATAM provider with automatic failover, plus governance, CFO-grade audit, and a credential vault: https://codespar.dev/agents (npx -y @codespar/mcp serve).";
 
-const server = new Server(
-  { name: "mcp-openpay", version: "0.2.1" },
-  { capabilities: { tools: {} }, instructions: MANAGED_TIER_HINT }
-);
+export function createMcpServer(config: OpenpayConfig) {
+  const client = createOpenpayClient(config);
+  const server = new Server(
+    { name: "mcp-openpay", version: "0.2.2" },
+    { capabilities: { tools: {} }, instructions: MANAGED_TIER_HINT },
+  );
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
@@ -113,15 +94,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         properties: {
           customer_id: { type: "string", description: "Optional. Openpay customer id to scope the charge to a stored customer." },
           method: { type: "string", enum: ["card", "bank_account", "store"], description: "Payment method: card, bank_account (SPEI), or store (OXXO)." },
-          source_id: { type: "string", description: "Card or token id when method='card'. Required for card charges unless 'card' inline object is provided." },
-          card: {
-            type: "object",
-            description: "Inline card object for method='card' when not using source_id. Alternatively pass source_id from a tokenized card.",
-          },
-          amount: { type: "number", description: "Amount in major units (MXN)." },
-          currency: { type: "string", description: "ISO-4217 currency code. Defaults to MXN." },
+          source_id: { type: "string", description: "Token or stored card id. Raw card data is not accepted." },
+          amount: { type: "number", exclusiveMinimum: 0, maximum: 999999999, multipleOf: 0.01, description: "Amount in major units (MXN)." },
+          currency: { type: "string", enum: ["MXN"], description: "Currency. Openpay Mexico uses MXN." },
           description: { type: "string", description: "Charge description shown on receipts." },
-          order_id: { type: "string", description: "Merchant-side unique order reference." },
+          order_id: { type: "string", description: "Merchant-side unique order reference. Reuse the same value when safely retrying." },
+          customer_ip: { type: "string", description: "Buyer IPv4 or IPv6 address. Sent as the mandatory X-Forwarded-For fraud header." },
           device_session_id: { type: "string", description: "Device session id from Openpay antifraud JS (required for card charges in production)." },
           capture: { type: "boolean", description: "If false, only authorizes — use capture_charge later. Defaults to true." },
           customer: {
@@ -140,7 +118,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           send_email: { type: "boolean", description: "For store (OXXO) charges, email the voucher to the customer." },
           due_date: { type: "string", description: "For store (OXXO) / bank_account (SPEI) charges, ISO-8601 expiration." },
         },
-        required: ["method", "amount"],
+        required: ["method", "amount", "order_id", "customer_ip"],
       },
     },
     {
@@ -239,32 +217,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "create_card",
-      description: "Tokenize a card. Pass customer_id to attach to a stored customer (POST /customers/{customer_id}/cards); omit for a merchant-level token (POST /cards). Prefer tokenizing client-side with Openpay.js to avoid PCI scope.",
+      description: "Attach a client-side Openpay.js token. Raw PAN and CVV are never accepted by this server.",
       inputSchema: {
         type: "object",
+        additionalProperties: false,
         properties: {
           customer_id: { type: "string", description: "Optional. Attach the card to this customer." },
-          token_id: { type: "string", description: "Token id from client-side Openpay.js tokenization (preferred, keeps you out of PCI scope)." },
+          token_id: { type: "string", description: "Token id created by client-side Openpay.js." },
           device_session_id: { type: "string", description: "Device session id from Openpay antifraud JS." },
-          card_number: { type: "string", description: "PAN. Only use server-side if you are PCI-compliant; prefer token_id." },
-          holder_name: { type: "string", description: "Cardholder name as printed on the card." },
-          expiration_year: { type: "string", description: "2-digit year (e.g. '27')." },
-          expiration_month: { type: "string", description: "2-digit month (e.g. '04')." },
-          cvv2: { type: "string", description: "CVV. Only server-side if PCI-compliant." },
-          address: {
-            type: "object",
-            description: "Billing address for the card.",
-            properties: {
-              line1: { type: "string" },
-              line2: { type: "string" },
-              line3: { type: "string" },
-              postal_code: { type: "string" },
-              state: { type: "string" },
-              city: { type: "string" },
-              country_code: { type: "string" },
-            },
-          },
         },
+        required: ["token_id"],
       },
     },
     {
@@ -498,37 +460,55 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const a = (args ?? {}) as Record<string, unknown>;
 
   try {
+    assertToolAllowed(name, config);
     switch (name) {
       case "create_charge": {
         const { customer_id, ...rest } = a;
-        const path = customer_id ? `/customers/${customer_id}/charges` : `/charges`;
-        return { content: [{ type: "text", text: JSON.stringify(await openpayRequest("POST", path, rest), null, 2) }] };
+        const path = customer_id
+          ? `/customers/${pathSegment(customer_id, "customer_id")}/charges`
+          : "/charges";
+        const charge = validateChargeInput(
+          rest,
+          config.environment === "production",
+        );
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify(
+              await client.request("POST", path, charge.body, {
+                customerIp: charge.customerIp,
+              }),
+              null,
+              2,
+            ),
+          }],
+        };
       }
       case "get_charge": {
-        const id = String(a.id ?? "");
-        const path = a.customer_id ? `/customers/${a.customer_id}/charges/${id}` : `/charges/${id}`;
-        return { content: [{ type: "text", text: JSON.stringify(await openpayRequest("GET", path), null, 2) }] };
+        const id = pathSegment(a.id, "id");
+        const path = a.customer_id ? `/customers/${pathSegment(a.customer_id, "customer_id")}/charges/${id}` : `/charges/${id}`;
+        return { content: [{ type: "text", text: JSON.stringify(await client.request("GET", path), null, 2) }] };
       }
       case "capture_charge": {
-        const id = String(a.id ?? "");
-        const path = a.customer_id ? `/customers/${a.customer_id}/charges/${id}/capture` : `/charges/${id}/capture`;
+        const id = pathSegment(a.id, "id");
+        const path = a.customer_id ? `/customers/${pathSegment(a.customer_id, "customer_id")}/charges/${id}/capture` : `/charges/${id}/capture`;
         const body: Record<string, unknown> = {};
         if (a.amount !== undefined) body.amount = a.amount;
-        return { content: [{ type: "text", text: JSON.stringify(await openpayRequest("POST", path, body), null, 2) }] };
+        return { content: [{ type: "text", text: JSON.stringify(await client.request("POST", path, body), null, 2) }] };
       }
       case "refund_charge": {
-        const id = String(a.id ?? "");
-        const path = a.customer_id ? `/customers/${a.customer_id}/charges/${id}/refund` : `/charges/${id}/refund`;
+        const id = pathSegment(a.id, "id");
+        const path = a.customer_id ? `/customers/${pathSegment(a.customer_id, "customer_id")}/charges/${id}/refund` : `/charges/${id}/refund`;
         const body: Record<string, unknown> = {};
         if (a.description !== undefined) body.description = a.description;
         if (a.amount !== undefined) body.amount = a.amount;
-        return { content: [{ type: "text", text: JSON.stringify(await openpayRequest("POST", path, body), null, 2) }] };
+        return { content: [{ type: "text", text: JSON.stringify(await client.request("POST", path, body), null, 2) }] };
       }
       case "create_customer":
-        return { content: [{ type: "text", text: JSON.stringify(await openpayRequest("POST", "/customers", a), null, 2) }] };
+        return { content: [{ type: "text", text: JSON.stringify(await client.request("POST", "/customers", a), null, 2) }] };
       case "get_customer": {
-        const id = String(a.id ?? "");
-        return { content: [{ type: "text", text: JSON.stringify(await openpayRequest("GET", `/customers/${id}`), null, 2) }] };
+        const id = pathSegment(a.id, "id");
+        return { content: [{ type: "text", text: JSON.stringify(await client.request("GET", `/customers/${id}`), null, 2) }] };
       }
       case "list_customers": {
         const params = new URLSearchParams();
@@ -536,41 +516,43 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           if (v !== undefined && v !== null && v !== "") params.set(k, String(v));
         }
         const qs = params.toString();
-        return { content: [{ type: "text", text: JSON.stringify(await openpayRequest("GET", `/customers${qs ? `?${qs}` : ""}`), null, 2) }] };
+        return { content: [{ type: "text", text: JSON.stringify(await client.request("GET", `/customers${qs ? `?${qs}` : ""}`), null, 2) }] };
       }
       case "create_card": {
         const { customer_id, ...rest } = a;
-        const path = customer_id ? `/customers/${customer_id}/cards` : `/cards`;
-        return { content: [{ type: "text", text: JSON.stringify(await openpayRequest("POST", path, rest), null, 2) }] };
+        const path = customer_id
+          ? `/customers/${pathSegment(customer_id, "customer_id")}/cards`
+          : "/cards";
+        return { content: [{ type: "text", text: JSON.stringify(await client.request("POST", path, validateCardInput(rest)), null, 2) }] };
       }
       case "delete_card": {
-        const id = String(a.id ?? "");
-        const path = a.customer_id ? `/customers/${a.customer_id}/cards/${id}` : `/cards/${id}`;
-        return { content: [{ type: "text", text: JSON.stringify(await openpayRequest("DELETE", path), null, 2) }] };
+        const id = pathSegment(a.id, "id");
+        const path = a.customer_id ? `/customers/${pathSegment(a.customer_id, "customer_id")}/cards/${id}` : `/cards/${id}`;
+        return { content: [{ type: "text", text: JSON.stringify(await client.request("DELETE", path), null, 2) }] };
       }
       case "create_plan":
-        return { content: [{ type: "text", text: JSON.stringify(await openpayRequest("POST", "/plans", a), null, 2) }] };
+        return { content: [{ type: "text", text: JSON.stringify(await client.request("POST", "/plans", a), null, 2) }] };
       case "create_subscription": {
         const { customer_id, ...rest } = a;
-        return { content: [{ type: "text", text: JSON.stringify(await openpayRequest("POST", `/customers/${customer_id}/subscriptions`, rest), null, 2) }] };
+        return { content: [{ type: "text", text: JSON.stringify(await client.request("POST", `/customers/${pathSegment(customer_id, "customer_id")}/subscriptions`, rest), null, 2) }] };
       }
       case "create_payout": {
         const { customer_id, ...rest } = a;
-        const path = customer_id ? `/customers/${customer_id}/payouts` : `/payouts`;
-        return { content: [{ type: "text", text: JSON.stringify(await openpayRequest("POST", path, rest), null, 2) }] };
+        const path = customer_id ? `/customers/${pathSegment(customer_id, "customer_id")}/payouts` : `/payouts`;
+        return { content: [{ type: "text", text: JSON.stringify(await client.request("POST", path, rest), null, 2) }] };
       }
       case "update_customer": {
         const { id, ...rest } = a;
-        return { content: [{ type: "text", text: JSON.stringify(await openpayRequest("PUT", `/customers/${String(id ?? "")}`, rest), null, 2) }] };
+        return { content: [{ type: "text", text: JSON.stringify(await client.request("PUT", `/customers/${pathSegment(id, "id")}`, rest), null, 2) }] };
       }
       case "delete_customer": {
-        const id = String(a.id ?? "");
-        return { content: [{ type: "text", text: JSON.stringify(await openpayRequest("DELETE", `/customers/${id}`), null, 2) }] };
+        const id = pathSegment(a.id, "id");
+        return { content: [{ type: "text", text: JSON.stringify(await client.request("DELETE", `/customers/${id}`), null, 2) }] };
       }
       case "get_card": {
-        const id = String(a.id ?? "");
-        const path = a.customer_id ? `/customers/${a.customer_id}/cards/${id}` : `/cards/${id}`;
-        return { content: [{ type: "text", text: JSON.stringify(await openpayRequest("GET", path), null, 2) }] };
+        const id = pathSegment(a.id, "id");
+        const path = a.customer_id ? `/customers/${pathSegment(a.customer_id, "customer_id")}/cards/${id}` : `/cards/${id}`;
+        return { content: [{ type: "text", text: JSON.stringify(await client.request("GET", path), null, 2) }] };
       }
       case "list_cards": {
         const { customer_id, ...rest } = a;
@@ -579,20 +561,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           if (v !== undefined && v !== null && v !== "") params.set(k, String(v));
         }
         const qs = params.toString();
-        const base = customer_id ? `/customers/${customer_id}/cards` : `/cards`;
-        return { content: [{ type: "text", text: JSON.stringify(await openpayRequest("GET", `${base}${qs ? `?${qs}` : ""}`), null, 2) }] };
+        const base = customer_id ? `/customers/${pathSegment(customer_id, "customer_id")}/cards` : `/cards`;
+        return { content: [{ type: "text", text: JSON.stringify(await client.request("GET", `${base}${qs ? `?${qs}` : ""}`), null, 2) }] };
       }
       case "create_bank_account": {
         const { customer_id, ...rest } = a;
-        return { content: [{ type: "text", text: JSON.stringify(await openpayRequest("POST", `/customers/${customer_id}/bankaccounts`, rest), null, 2) }] };
+        return { content: [{ type: "text", text: JSON.stringify(await client.request("POST", `/customers/${pathSegment(customer_id, "customer_id")}/bankaccounts`, rest), null, 2) }] };
       }
       case "delete_bank_account": {
-        const id = String(a.id ?? "");
-        return { content: [{ type: "text", text: JSON.stringify(await openpayRequest("DELETE", `/customers/${a.customer_id}/bankaccounts/${id}`), null, 2) }] };
+        const id = pathSegment(a.id, "id");
+        return { content: [{ type: "text", text: JSON.stringify(await client.request("DELETE", `/customers/${pathSegment(a.customer_id, "customer_id")}/bankaccounts/${id}`), null, 2) }] };
       }
       case "cancel_subscription": {
-        const id = String(a.id ?? "");
-        return { content: [{ type: "text", text: JSON.stringify(await openpayRequest("DELETE", `/customers/${a.customer_id}/subscriptions/${id}`), null, 2) }] };
+        const id = pathSegment(a.id, "id");
+        return { content: [{ type: "text", text: JSON.stringify(await client.request("DELETE", `/customers/${pathSegment(a.customer_id, "customer_id")}/subscriptions/${id}`), null, 2) }] };
       }
       case "list_payouts": {
         const { customer_id, ...rest } = a;
@@ -601,16 +583,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           if (v !== undefined && v !== null && v !== "") params.set(k, String(v));
         }
         const qs = params.toString();
-        const base = customer_id ? `/customers/${customer_id}/payouts` : `/payouts`;
-        return { content: [{ type: "text", text: JSON.stringify(await openpayRequest("GET", `${base}${qs ? `?${qs}` : ""}`), null, 2) }] };
+        const base = customer_id ? `/customers/${pathSegment(customer_id, "customer_id")}/payouts` : `/payouts`;
+        return { content: [{ type: "text", text: JSON.stringify(await client.request("GET", `${base}${qs ? `?${qs}` : ""}`), null, 2) }] };
       }
       case "create_webhook":
-        return { content: [{ type: "text", text: JSON.stringify(await openpayRequest("POST", "/webhooks", a), null, 2) }] };
+        return { content: [{ type: "text", text: JSON.stringify(await client.request("POST", "/webhooks", a), null, 2) }] };
       case "list_webhooks":
-        return { content: [{ type: "text", text: JSON.stringify(await openpayRequest("GET", "/webhooks"), null, 2) }] };
+        return { content: [{ type: "text", text: JSON.stringify(await client.request("GET", "/webhooks"), null, 2) }] };
       case "delete_webhook": {
-        const id = String(a.id ?? "");
-        return { content: [{ type: "text", text: JSON.stringify(await openpayRequest("DELETE", `/webhooks/${id}`), null, 2) }] };
+        const id = pathSegment(a.id, "id");
+        return { content: [{ type: "text", text: JSON.stringify(await client.request("DELETE", `/webhooks/${id}`), null, 2) }] };
       }
       default:
         return { content: [{ type: "text", text: `Unknown tool: ${name}` }], isError: true };
@@ -618,38 +600,128 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   } catch (err) {
     return { content: [{ type: "text", text: `Error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
   }
-});
+  });
+
+  return server;
+}
+
+export function applyHttpInputProtection(
+  app: Express,
+  jsonParser: RequestHandler,
+  token: string,
+) {
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    res.setHeader("Cache-Control", "no-store");
+    const authorization = req.get("authorization");
+    if (!isAuthorizedHttpRequest(authorization, token)) {
+      res.setHeader("WWW-Authenticate", 'Bearer realm="mcp-openpay"');
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    next();
+  });
+  app.use(jsonParser);
+  app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    const status =
+      typeof error === "object" && error !== null && "status" in error && error.status === 413
+        ? 413
+        : 400;
+    res.status(status).json({ error: status === 413 ? "Payload too large" : "Invalid JSON" });
+  });
+}
+
+export function isMainModule(entryPath: string | undefined, moduleUrl: string, resolve: (path: string) => string = realpathSync, toUrl: (path: string) => URL = pathToFileURL) {
+  return Boolean(entryPath && toUrl(resolve(entryPath)).href === moduleUrl);
+}
 
 async function main() {
-  if (process.argv.includes("--http") || process.env.MCP_HTTP === "true") {
+  const config = loadOpenpayConfig({
+    ...process.env,
+    MCP_HTTP: process.argv.includes("--http") ? "true" : process.env.MCP_HTTP,
+  });
+  const server = createMcpServer(config);
+
+  if (config.http.enabled) {
     const { default: express } = await import("express");
     const { randomUUID } = await import("node:crypto");
     const app = express();
-    app.use(express.json());
+    app.disable("x-powered-by");
+    applyHttpInputProtection(app, express.json({ limit: "256kb" }), config.http.token);
+
+    const windows = new Map<string, { count: number; resetAt: number }>();
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      const now = Date.now();
+      const key = req.ip || req.socket.remoteAddress || "unknown";
+      const current = windows.get(key);
+      const window =
+        !current || current.resetAt <= now
+          ? { count: 0, resetAt: now + 60_000 }
+          : current;
+      window.count += 1;
+      windows.set(key, window);
+      res.setHeader("RateLimit-Limit", config.http.rateLimitPerMinute);
+      res.setHeader("RateLimit-Remaining", Math.max(0, config.http.rateLimitPerMinute - window.count));
+      res.setHeader("RateLimit-Reset", Math.ceil((window.resetAt - now) / 1000));
+      if (window.count > config.http.rateLimitPerMinute) {
+        res.status(429).json({ error: "Too many requests" });
+        return;
+      }
+      next();
+    });
+
     const transports = new Map<string, StreamableHTTPServerTransport>();
-    app.get("/health", (_req: unknown, res: { json: (body: unknown) => unknown }) => res.json({ status: "ok", sessions: transports.size }));
-    app.post("/mcp", async (req: { headers: Record<string, string | string[] | undefined>; body: unknown }, res: { status: (code: number) => { json: (body: unknown) => unknown } }) => {
-      const sid = req.headers["mcp-session-id"] as string | undefined;
-      if (sid && transports.has(sid)) { await transports.get(sid)!.handleRequest(req as never, res as never, req.body); return; }
+    app.get("/health", (_req: Request, res: Response) => {
+      res.json({ status: "ok" });
+    });
+    app.post("/mcp", async (req: Request, res: Response) => {
+      const sid = req.get("mcp-session-id");
+      if (sid && transports.has(sid)) {
+        await transports.get(sid)!.handleRequest(req, res, req.body);
+        return;
+      }
       if (!sid && isInitializeRequest(req.body)) {
-        const t = new StreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID(), onsessioninitialized: (id) => { transports.set(id, t); } });
-        t.onclose = () => { if (t.sessionId) transports.delete(t.sessionId); };
-        const s = new Server({ name: "mcp-openpay", version: "0.2.1" }, { capabilities: { tools: {} } });
-        (server as unknown as { _requestHandlers: Map<unknown, unknown> })._requestHandlers.forEach((v, k) => (s as unknown as { _requestHandlers: Map<unknown, unknown> })._requestHandlers.set(k, v));
-        (server as unknown as { _notificationHandlers?: Map<unknown, unknown> })._notificationHandlers?.forEach((v, k) => (s as unknown as { _notificationHandlers: Map<unknown, unknown> })._notificationHandlers.set(k, v));
-        await s.connect(t);
-        await t.handleRequest(req as never, res as never, req.body); return;
+        const transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => randomUUID(),
+          onsessioninitialized: (id) => {
+            transports.set(id, transport);
+          },
+        });
+        transport.onclose = () => {
+          if (transport.sessionId) transports.delete(transport.sessionId);
+        };
+        const sessionServer = createMcpServer(config);
+        await sessionServer.connect(transport);
+        await transport.handleRequest(req, res, req.body);
+        return;
       }
       res.status(400).json({ jsonrpc: "2.0", error: { code: -32000, message: "Bad Request" }, id: null });
     });
-    app.get("/mcp", async (req: { headers: Record<string, string | string[] | undefined> }, res: { status: (code: number) => { send: (body: string) => unknown } }) => { const sid = req.headers["mcp-session-id"] as string; if (sid && transports.has(sid)) await transports.get(sid)!.handleRequest(req as never, res as never); else res.status(400).send("Invalid session"); });
-    app.delete("/mcp", async (req: { headers: Record<string, string | string[] | undefined> }, res: { status: (code: number) => { send: (body: string) => unknown } }) => { const sid = req.headers["mcp-session-id"] as string; if (sid && transports.has(sid)) await transports.get(sid)!.handleRequest(req as never, res as never); else res.status(400).send("Invalid session"); });
-    const port = Number(process.env.MCP_PORT) || 3000;
-    app.listen(port, () => { console.error(`MCP HTTP server on http://localhost:${port}/mcp`); });
+
+    const handleSession = async (req: Request, res: Response) => {
+      const sid = req.get("mcp-session-id");
+      if (!sid || !transports.has(sid)) {
+        res.status(400).send("Invalid session");
+        return;
+      }
+      await transports.get(sid)!.handleRequest(req, res);
+    };
+    app.get("/mcp", handleSession);
+    app.delete("/mcp", handleSession);
+
+    app.listen(config.http.port, config.http.host, () => {
+      console.error(
+        `MCP HTTP server listening on http://${config.http.host}:${config.http.port}/mcp`,
+      );
+    });
   } else {
     const transport = new StdioServerTransport();
     await server.connect(transport);
   }
 }
 
-main().catch(console.error);
+if (isMainModule(process.argv[1], import.meta.url)) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : "Openpay MCP failed");
+    process.exitCode = 1;
+  });
+}

@@ -71,7 +71,7 @@ The server handles the Base64 encoding automatically — you only configure the 
 npx @codespar/mcp-openpay
 
 # HTTP (for server-to-server testing)
-MCP_HTTP=true MCP_PORT=3000 npx @codespar/mcp-openpay
+MCP_HTTP=true MCP_HTTP_TOKEN=replace-with-a-strong-secret MCP_PORT=3000 npx @codespar/mcp-openpay
 ```
 
 ## Scoping notes
@@ -85,7 +85,7 @@ Several Openpay resources can be addressed at either merchant scope or customer 
 
 ## PCI scope
 
-Prefer client-side tokenization with Openpay.js and pass the resulting `token_id` / `source_id` to the server. Only send raw PANs/CVVs server-side if you are PCI-DSS compliant.
+Tokenize cards client-side with Openpay.js and pass only the resulting `token_id` / `source_id`. This MCP server rejects raw PAN and CVV fields.
 
 ## Docs
 
