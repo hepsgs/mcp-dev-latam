@@ -14,7 +14,7 @@ S4. Publish under the npm organization requested as: "de las organizaciones la q
 
 - [x] T1 — S2-S3 — inline (no writer trigger; one cohesive security unit) — add release guards and regression tests — commit: `403d847` — review: high, approved and acknowledged (`review-a7f37c4d16743ef9`)
 - [x] T2 — S1-S3 — inline after T1 delivery — align 0.3.0 metadata, server manifest, test script, and release documentation — commit: `d30193f` — review: high, approved and acknowledged (`review-d36fb93c19bdd0c0`)
-- [x] T3 — S4 — inline (no writer trigger; one cohesive package-identity correction) — change the npm package scope and verify before delivery — commit: pending work-unit commit — review: pending assessment
+- [x] T3 — S4 — inline (no writer trigger; one cohesive package-identity correction) — change the npm package scope and verify before delivery — commit: `8ab2d40` — review: pending assessment
 
 ## Log
 
