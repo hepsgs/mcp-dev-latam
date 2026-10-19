@@ -1,4 +1,4 @@
-# @codespar/mcp-openpay
+# @deviatik/mcp-openpay
 
 MCP server for [Openpay](https://www.openpay.mx), the BBVA-owned Mexican payment gateway. It supports cards, SPEI, store payments, subscriptions, webhooks, and marketplace payouts through 23 tools.
 
@@ -17,7 +17,7 @@ These controls reduce accidental exposure; they do not replace PCI DSS obligatio
 ## Install
 
 ```bash
-npm install @codespar/mcp-openpay
+npm install @deviatik/mcp-openpay
 ```
 
 ## Sandbox quick start
@@ -27,14 +27,14 @@ export OPENPAY_MERCHANT_ID="your-sandbox-merchant-id"
 export OPENPAY_PRIVATE_KEY="sk_your_sandbox_private_key"
 
 # Read-only stdio server. Mutations remain disabled.
-npx @codespar/mcp-openpay
+npx @deviatik/mcp-openpay
 ```
 
 Enable mutations only after reviewing the tools your agent may call:
 
 ```bash
 export OPENPAY_ALLOW_MUTATIONS=true
-npx @codespar/mcp-openpay
+npx @deviatik/mcp-openpay
 ```
 
 Payouts need a second explicit gate:
@@ -53,7 +53,7 @@ export OPENPAY_ENV=production
 export OPENPAY_ENABLE_PRODUCTION=true
 export OPENPAY_MERCHANT_ID="your-production-merchant-id"
 export OPENPAY_PRIVATE_KEY="sk_your_production_private_key"
-npx @codespar/mcp-openpay
+npx @deviatik/mcp-openpay
 ```
 
 Mutation and payout gates still apply in production.
@@ -81,7 +81,7 @@ stdio is the default. To enable HTTP locally, generate a random token of at leas
 ```bash
 export MCP_HTTP=true
 export MCP_HTTP_TOKEN="replace-with-a-random-token-at-least-32-characters"
-npx @codespar/mcp-openpay --http
+npx @deviatik/mcp-openpay --http
 ```
 
 The server listens on `127.0.0.1:3000` and requires this header on `/health` and `/mcp`:
@@ -128,8 +128,8 @@ Customer-scoped resources accept `customer_id`; otherwise supported resources us
 
 ```bash
 npm install
-npm test -w @codespar/mcp-openpay
-npm run build -w @codespar/mcp-openpay
+npm test -w @deviatik/mcp-openpay
+npm run build -w @deviatik/mcp-openpay
 ```
 
 Tests use fake credentials and do not call Openpay.

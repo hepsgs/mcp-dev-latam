@@ -220,7 +220,7 @@ Browse the full catalog at [codespar.dev/servers](https://codespar.dev/servers).
 | **[Pagseguro](packages/payments/pagseguro)** | 24 | `@codespar/mcp-pagseguro` | API Key |
 | **[Stripe ACP](packages/payments/stripe-acp)** | 24 | `@codespar/mcp-stripe-acp` | API Key |
 | **[Iugu](packages/payments/iugu)** | 23 | `@codespar/mcp-iugu` | API Key |
-| **[Openpay](packages/payments/openpay)** | 23 | `@codespar/mcp-openpay` | API Key |
+| **[Openpay](packages/payments/openpay)** | 23 | `@deviatik/mcp-openpay` | API Key |
 | **[AP2](packages/payments/ap2)** <sub>alpha</sub> <sub>deprecated: no live endpoint</sub> | 22 | `@codespar/mcp-ap2` | API Key |
 | **[Braintree](packages/payments/braintree)** | 22 | `@codespar/mcp-braintree` | API Key |
 | **[Braspag](packages/payments/braspag)** | 22 | `@codespar/mcp-braspag` | API Key |

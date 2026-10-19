@@ -11,7 +11,7 @@
   "packages": [
     {
       "registryType": "npm",
-      "identifier": "@codespar/mcp-openpay",
+      "identifier": "@deviatik/mcp-openpay",
       "version": "0.3.0",
       "transport": {
         "type": "stdio"
