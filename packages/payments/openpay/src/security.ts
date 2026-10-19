@@ -64,6 +64,18 @@ function containsRawCardData(value: unknown): boolean {
   });
 }
 
+export function validateCardInput(
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  if (containsRawCardData(input)) {
+    throw new Error(
+      "Raw card data is prohibited; tokenize with Openpay.js and pass token_id",
+    );
+  }
+  requiredString(input.token_id, "token_id");
+  return input;
+}
+
 function requiredString(
   value: unknown,
   name: string,
