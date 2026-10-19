@@ -1,36 +1,18 @@
 # @codespar/mcp-openpay
 
-MCP server for [Openpay](https://www.openpay.mx) — the BBVA-owned Mexican payment gateway.
+MCP server for [Openpay](https://www.openpay.mx), the BBVA-owned Mexican payment gateway. It supports cards, SPEI, store payments, subscriptions, webhooks, and marketplace payouts through 23 tools.
 
-Openpay is the main BBVA-backed alternative to Conekta for Mexican online merchants. Adding it to the catalog alongside `@codespar/mcp-conekta` closes the "big two" MX gateway story and opens the BBVA rails (SPEI, OXXO, domestic cards) to agents. Differentiators in this catalog: native subscriptions (plans + per-customer recurring billing) and marketplace payouts.
+## Security defaults
 
-## Tools (23)
+- Sandbox is the default environment.
+- Production requires `OPENPAY_ENABLE_PRODUCTION=true`.
+- Every money-moving or state-changing tool requires `OPENPAY_ALLOW_MUTATIONS=true`.
+- Payouts additionally require `OPENPAY_ALLOW_PAYOUTS=true`.
+- Card and charge handlers reject raw PAN and CVV values. Tokenize cards with Openpay.js first.
+- Provider requests time out after 10 seconds by default and return sanitized errors.
+- HTTP transport is opt-in, requires a Bearer token, rate-limits requests, and binds to loopback unless remote access is explicitly enabled.
 
-| Tool | Purpose |
-|---|---|
-| `create_charge` | Create a charge. |
-| `get_charge` | Retrieve a charge. |
-| `capture_charge` | Capture a previously authorized charge (when the original charge used capture=false). |
-| `refund_charge` | Refund a captured charge. |
-| `create_customer` | Create a customer record. |
-| `get_customer` | Retrieve a customer by Openpay customer id. |
-| `list_customers` | List customers with optional filters. |
-| `create_card` | Tokenize a card. |
-| `delete_card` | Delete a tokenized card. |
-| `create_plan` | Create a subscription plan. |
-| `create_subscription` | Subscribe a customer to a plan. |
-| `create_payout` | Pay out MXN to a bank account. |
-| `update_customer` | Update a stored customer (PUT /customers/{id}). |
-| `delete_customer` | Delete a customer (DELETE /customers/{id}). |
-| `get_card` | Retrieve a tokenized card. |
-| `list_cards` | List tokenized cards. |
-| `create_bank_account` | Store a customer bank account (POST /customers/{customer_id}/bankaccounts). |
-| `delete_bank_account` | Delete a stored customer bank account (DELETE /customers/{customer_id}/bankaccounts/{id}). |
-| `cancel_subscription` | Cancel a customer's subscription (DELETE /customers/{customer_id}/subscriptions/{id}). |
-| `list_payouts` | List payouts. |
-| `create_webhook` | Register a webhook endpoint (POST /webhooks). |
-| `list_webhooks` | List configured webhook subscriptions (GET /webhooks). |
-| `delete_webhook` | Delete a webhook subscription (DELETE /webhooks/{id}). |
+These controls reduce accidental exposure; they do not replace PCI DSS obligations, least-privilege credentials, network controls, monitoring, or human approval for high-impact operations.
 
 ## Install
 
@@ -38,58 +20,123 @@ Openpay is the main BBVA-backed alternative to Conekta for Mexican online mercha
 npm install @codespar/mcp-openpay
 ```
 
-## Environment
+## Sandbox quick start
 
 ```bash
-OPENPAY_MERCHANT_ID="..."  # merchant id (part of the API URL path)
-OPENPAY_PRIVATE_KEY="..."  # private API key — secret
-OPENPAY_ENV="sandbox"      # 'sandbox' (default) | 'production'
+export OPENPAY_MERCHANT_ID="your-sandbox-merchant-id"
+export OPENPAY_PRIVATE_KEY="sk_your_sandbox_private_key"
+
+# Read-only stdio server. Mutations remain disabled.
+npx @codespar/mcp-openpay
 ```
+
+Enable mutations only after reviewing the tools your agent may call:
+
+```bash
+export OPENPAY_ALLOW_MUTATIONS=true
+npx @codespar/mcp-openpay
+```
+
+Payouts need a second explicit gate:
+
+```bash
+export OPENPAY_ALLOW_MUTATIONS=true
+export OPENPAY_ALLOW_PAYOUTS=true
+```
+
+## Production
+
+Production requires an explicit environment and opt-in:
+
+```bash
+export OPENPAY_ENV=production
+export OPENPAY_ENABLE_PRODUCTION=true
+export OPENPAY_MERCHANT_ID="your-production-merchant-id"
+export OPENPAY_PRIVATE_KEY="sk_your_production_private_key"
+npx @codespar/mcp-openpay
+```
+
+Mutation and payout gates still apply in production.
+
+## Card handling
+
+The card and charge tools accept tokens instead of raw card numbers or CVVs.
+
+1. Tokenize the card in the browser or mobile client with Openpay.js.
+2. Pass the resulting token as `token_id` to `create_card`, or as `source_id` to a card `create_charge` call.
+3. Pass `customer_ip` on every charge. Production card charges also require `device_session_id`.
+
+This is intentionally incompatible with the unsafe raw-card inputs accepted by versions through `0.2.2`.
 
 ## Authentication
 
-HTTP Basic. The private key is the username, and the password is empty:
+Provider requests use HTTP Basic authentication with `OPENPAY_PRIVATE_KEY` as the username and an empty password. The server creates this header; clients must never send the private key as a tool argument.
 
-```
-Authorization: Basic base64(OPENPAY_PRIVATE_KEY + ":")
-Content-Type: application/json
-```
+HTTP transport uses a separate Bearer token from `MCP_HTTP_TOKEN`. This token protects access to the MCP server and is not sent to Openpay.
 
-The server handles the Base64 encoding automatically — you only configure the three env vars.
+## HTTP transport
 
-## Base URLs
-
-| Env | Host |
-|-----|------|
-| `sandbox` (default) | `https://sandbox-api.openpay.mx/v1/{merchant_id}` |
-| `production` | `https://api.openpay.mx/v1/{merchant_id}` |
-
-## Run
+stdio is the default. To enable HTTP locally, generate a random token of at least 32 characters:
 
 ```bash
-# stdio (default — for Claude Desktop, Cursor, etc)
-npx @codespar/mcp-openpay
-
-# HTTP (for server-to-server testing)
-MCP_HTTP=true MCP_HTTP_TOKEN=replace-with-a-strong-secret MCP_PORT=3000 npx @codespar/mcp-openpay
+export MCP_HTTP=true
+export MCP_HTTP_TOKEN="replace-with-a-random-token-at-least-32-characters"
+npx @codespar/mcp-openpay --http
 ```
 
-## Scoping notes
+The server listens on `127.0.0.1:3000` and requires this header on `/health` and `/mcp`:
 
-Several Openpay resources can be addressed at either merchant scope or customer scope. The tools expose this via an optional `customer_id` parameter:
+```text
+Authorization: Bearer <MCP_HTTP_TOKEN>
+```
 
-- `create_charge`, `get_charge`, `capture_charge`, `refund_charge` — routed to `/customers/{customer_id}/...` when `customer_id` is set, else `/...`.
-- `create_card`, `delete_card` — same pattern.
-- `create_payout` — customer-scoped payout requires the customer to have `requires_account=true`.
-- `create_subscription` — customer scope is required by the API (plans are merchant-scoped; subscriptions are always per-customer).
+Remote binding requires both a non-loopback host and `MCP_HTTP_ALLOW_REMOTE=true`. Put remote deployments behind TLS and an authenticated reverse proxy; the built-in server is plain HTTP.
 
-## PCI scope
+## Configuration
 
-Tokenize cards client-side with Openpay.js and pass only the resulting `token_id` / `source_id`. This MCP server rejects raw PAN and CVV fields.
+| Variable | Default | Purpose |
+|---|---:|---|
+| `OPENPAY_MERCHANT_ID` | required | Merchant identifier used in the provider URL. |
+| `OPENPAY_PRIVATE_KEY` | required | Secret provider key used as the HTTP Basic username. |
+| `OPENPAY_ENV` | `sandbox` | `sandbox` or `production`. |
+| `OPENPAY_ENABLE_PRODUCTION` | `false` | Required before production endpoints can be used. |
+| `OPENPAY_ALLOW_MUTATIONS` | `false` | Enables state-changing and money-moving tools. |
+| `OPENPAY_ALLOW_PAYOUTS` | `false` | Enables `create_payout`; mutations must also be enabled. |
+| `OPENPAY_REQUEST_TIMEOUT_MS` | `10000` | Provider timeout, from 1,000 through 30,000 ms. |
+| `OPENPAY_BASE_URL` | official environment host | HTTPS origin override for testing. |
+| `OPENPAY_ALLOW_CUSTOM_BASE_URL` | `false` | Required when the override is not an official Openpay origin. |
+| `MCP_HTTP` | `false` | Enables HTTP transport. `--http` also enables it. |
+| `MCP_HTTP_TOKEN` | none | Required HTTP Bearer token; minimum 32 characters. |
+| `MCP_HTTP_HOST` | `127.0.0.1` | HTTP bind host. |
+| `MCP_HTTP_ALLOW_REMOTE` | `false` | Required for non-loopback binding. |
+| `MCP_PORT` | `3000` | HTTP port. |
+| `MCP_HTTP_RATE_LIMIT_PER_MINUTE` | `60` | Per-client request limit. |
 
-## Docs
+Never put real credentials in MCP configuration committed to source control. A custom base URL receives the Openpay private key, so use it only for a trusted HTTPS test endpoint.
 
-https://documents.openpay.mx/en/api
+## Tools (23)
+
+Read-only tools: `get_charge`, `get_customer`, `list_customers`, `get_card`, `list_cards`, `list_payouts`, and `list_webhooks`.
+
+Mutation-gated tools: `create_charge`, `capture_charge`, `refund_charge`, `create_customer`, `update_customer`, `delete_customer`, `create_card`, `delete_card`, `create_bank_account`, `delete_bank_account`, `create_plan`, `create_subscription`, `cancel_subscription`, `create_webhook`, and `delete_webhook`.
+
+`create_payout` additionally requires the payout gate.
+
+Customer-scoped resources accept `customer_id`; otherwise supported resources use merchant scope.
+
+## Development
+
+```bash
+npm install
+npm test -w @codespar/mcp-openpay
+npm run build -w @codespar/mcp-openpay
+```
+
+Tests use fake credentials and do not call Openpay.
+
+## Official API documentation
+
+[Openpay API documentation](https://documents.openpay.mx/docs/api/index.html)
 
 ## Enterprise
 

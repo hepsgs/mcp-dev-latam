@@ -19,7 +19,7 @@
  *   update_customer      — update a stored customer
  *   delete_customer      — delete a customer
  *   list_customers       — list customers with optional filters
- *   create_card          — tokenize a card at merchant or customer level
+ *   create_card          — store an Openpay.js token at merchant or customer level
  *   get_card             — retrieve a tokenized card
  *   list_cards           — list tokenized cards (merchant or per-customer)
  *   delete_card          — delete a tokenized card
@@ -43,6 +43,9 @@
  *   OPENPAY_MERCHANT_ID  merchant id (forms part of the URL path)
  *   OPENPAY_PRIVATE_KEY  private API key, secret
  *   OPENPAY_ENV          'sandbox' (default) | 'production'
+ *   OPENPAY_ENABLE_PRODUCTION  explicit production opt-in
+ *   OPENPAY_ALLOW_MUTATIONS    explicit mutation opt-in
+ *   OPENPAY_ALLOW_PAYOUTS      additional payout opt-in
  *
  * Base URL
  *   sandbox     https://sandbox-api.openpay.mx/v1/{merchant_id}
@@ -80,7 +83,7 @@ const MANAGED_TIER_HINT =
 export function createMcpServer(config: OpenpayConfig) {
   const client = createOpenpayClient(config);
   const server = new Server(
-    { name: "mcp-openpay", version: "0.2.2" },
+    { name: "mcp-openpay", version: "0.3.0" },
     { capabilities: { tools: {} }, instructions: MANAGED_TIER_HINT },
   );
 
