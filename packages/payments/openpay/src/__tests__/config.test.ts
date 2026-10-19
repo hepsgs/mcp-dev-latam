@@ -27,6 +27,33 @@ describe("loadOpenpayConfig", () => {
     ).toThrow(/OPENPAY_ENABLE_PRODUCTION/);
   });
 
+  it("does not allow the production origin through custom-host settings", () => {
+    expect(() =>
+      loadOpenpayConfig({
+        ...credentials,
+        OPENPAY_BASE_URL: "https://api.openpay.mx",
+        OPENPAY_ALLOW_CUSTOM_BASE_URL: "true",
+      }),
+    ).toThrow(/OPENPAY_ENV=production/);
+
+    expect(() =>
+      loadOpenpayConfig({
+        ...credentials,
+        OPENPAY_BASE_URL: "https://api.openpay.mx",
+        OPENPAY_ALLOW_CUSTOM_BASE_URL: "true",
+        OPENPAY_ENABLE_PRODUCTION: "true",
+      }),
+    ).toThrow(/OPENPAY_ENV=production/);
+
+    expect(() =>
+      loadOpenpayConfig({
+        ...credentials,
+        OPENPAY_BASE_URL: "https://api.openpay.mx.",
+        OPENPAY_ALLOW_CUSTOM_BASE_URL: "true",
+      }),
+    ).toThrow(/OPENPAY_ENV=production/);
+  });
+
   it("rejects custom provider hosts unless explicitly allowed", () => {
     expect(() =>
       loadOpenpayConfig({

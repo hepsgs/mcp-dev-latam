@@ -80,15 +80,29 @@ function providerOrigin(
   ) {
     throw new Error("OPENPAY_BASE_URL must contain only an HTTPS origin");
   }
+  const isProductionOrigin =
+    url.port === "" &&
+    url.hostname.replace(/\.$/, "") === "api.openpay.mx";
+  const requestedOrigin = isProductionOrigin
+    ? "https://api.openpay.mx"
+    : url.origin;
   if (
-    url.origin !== official &&
+    environment !== "production" &&
+    isProductionOrigin
+  ) {
+    throw new Error(
+      "The production provider host requires OPENPAY_ENV=production and OPENPAY_ENABLE_PRODUCTION=true",
+    );
+  }
+  if (
+    requestedOrigin !== official &&
     !enabled(env.OPENPAY_ALLOW_CUSTOM_BASE_URL)
   ) {
     throw new Error(
       "Custom provider hosts require OPENPAY_ALLOW_CUSTOM_BASE_URL=true",
     );
   }
-  return url.origin;
+  return requestedOrigin;
 }
 
 export function loadOpenpayConfig(

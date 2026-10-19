@@ -3,6 +3,7 @@ import { loadOpenpayConfig } from "../config.js";
 import {
   assertToolAllowed,
   isAuthorizedHttpRequest,
+  pathSegment,
   redactSensitive,
   validateCardInput,
   validateChargeInput,
@@ -127,5 +128,33 @@ describe("HTTP authentication and redaction", () => {
       cvv2: "[REDACTED]",
       nested: { password: "[REDACTED]" },
     });
+  });
+
+  it("redacts sensitive aliases regardless of casing or separators", () => {
+    expect(
+      redactSensitive({
+        cardNumber: "4111111111111111",
+        privateKey: "private-secret",
+        securityCode: "123",
+        "api-key": "api-secret",
+      }),
+    ).toEqual({
+      cardNumber: "[REDACTED]",
+      privateKey: "[REDACTED]",
+      securityCode: "[REDACTED]",
+      "api-key": "[REDACTED]",
+    });
+  });
+});
+
+describe("resource identifiers", () => {
+  it("rejects standalone dot path segments", () => {
+    expect(() => pathSegment(".", "resource_id")).toThrow(
+      /resource_id contains unsupported characters/,
+    );
+    expect(() => pathSegment("..", "resource_id")).toThrow(
+      /resource_id contains unsupported characters/,
+    );
+    expect(pathSegment("customer.v2", "resource_id")).toBe("customer.v2");
   });
 });
