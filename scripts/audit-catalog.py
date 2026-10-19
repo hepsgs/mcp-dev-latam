@@ -9,7 +9,7 @@ markdown report on stdout (or to a file via --out).
 Checks:
 
   1. server.json required fields ($schema, name, description, repository, version, packages)
-  2. Naming convention — name=io.github.codespar/mcp-<slug>, package.identifier=@codespar/mcp-<slug>
+  2. Naming convention — name=io.github.codespar/mcp-<slug>, package.identifier=@<scope>/mcp-<slug>
   3. Repo URL canonicalization (mcp-dev-brasil → mcp-dev-latam)
   4. Provider block (homepage / logoUrl / docsUrl) for dashboard rendering
   5. README presence + required H2 sections (Tools, Authentication)
@@ -40,7 +40,7 @@ PACKAGES = ROOT / "packages"
 CANONICAL_REPO = "https://github.com/codespar/mcp-dev-latam"
 LEGACY_REPO_RE = re.compile(r"mcp-dev-brasil")
 NAME_PREFIX = "io.github.codespar/mcp-"
-IDENT_PREFIX = "@codespar/mcp-"
+IDENT_RE = re.compile(r"^@[a-z0-9][a-z0-9._-]*/mcp-[a-z0-9][a-z0-9._-]*$")
 
 
 @dataclass
@@ -108,7 +108,7 @@ def check_required_fields(audit: Audit, slug: str, sj: dict) -> None:
             )
 
 
-def check_naming(audit: Audit, slug: str, sj: dict) -> None:
+def check_naming(audit: Audit, slug: str, dir_path: Path, sj: dict) -> None:
     name = sj.get("name", "")
     if name and not name.startswith(NAME_PREFIX):
         audit.add(
@@ -116,12 +116,25 @@ def check_naming(audit: Audit, slug: str, sj: dict) -> None:
             f"name `{name}` does not start with `{NAME_PREFIX}`",
         )
     pkgs = sj.get("packages") or []
+    package_json = load_json(dir_path / "package.json") or {}
+    package_name = package_json.get("name", "")
+    expected_suffix = f"/mcp-{dir_path.name}"
     for i, pkg in enumerate(pkgs):
         ident = pkg.get("identifier", "") if isinstance(pkg, dict) else ""
-        if ident and not ident.startswith(IDENT_PREFIX):
+        if ident and (not IDENT_RE.fullmatch(ident) or not ident.endswith(expected_suffix)):
             audit.add(
                 slug, "HIGH", "2-naming",
-                f"packages[{i}].identifier `{ident}` does not start with `{IDENT_PREFIX}`",
+                f"packages[{i}].identifier `{ident}` must match `@<scope>{expected_suffix}`",
+            )
+        if ident and not package_name:
+            audit.add(
+                slug, "HIGH", "2-naming",
+                f"packages[{i}].identifier `{ident}` cannot be verified because package.json name is missing",
+            )
+        elif ident and ident != package_name:
+            audit.add(
+                slug, "HIGH", "2-naming",
+                f"packages[{i}].identifier `{ident}` != package.json name `{package_name}`",
             )
 
 
@@ -277,7 +290,7 @@ def run() -> int:
             audit.add(slug, "HIGH", "1-required-fields", "server.json failed to parse")
             continue
         check_required_fields(audit, slug, sj)
-        check_naming(audit, slug, sj)
+        check_naming(audit, slug, d, sj)
         check_package_mcp_name(audit, slug, d, sj)
         check_repo_url(audit, slug, sj)
         check_provider_block(audit, slug, sj)

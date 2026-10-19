@@ -1,5 +1,5 @@
 {
-  "name": "@codespar/mcp-openpay",
+  "name": "@deviatik/mcp-openpay",
   "version": "0.3.0",
   "description": "MCP server for Openpay — BBVA-owned Mexican payment gateway (cards, SPEI, OXXO, subscriptions, payouts)",
   "type": "module",
