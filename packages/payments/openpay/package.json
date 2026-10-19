@@ -1,6 +1,6 @@
 {
   "name": "@codespar/mcp-openpay",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "MCP server for Openpay — BBVA-owned Mexican payment gateway (cards, SPEI, OXXO, subscriptions, payouts)",
   "type": "module",
   "main": "./dist/index.js",
@@ -12,7 +12,8 @@
   "scripts": {
     "build": "tsc",
     "prepack": "npm run build",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "test": "vitest run --root ../../.. packages/payments/openpay/src/__tests__"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
